@@ -3,116 +3,156 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-FILE_NAME = "loans.xlsx"
+LOANS_FILE = "loans1.xlsx"
+PAYMENTS_FILE = "payments.xlsx"
 
-# -------------------- Initialization --------------------
-def initialize_file():
-    if not os.path.exists(FILE_NAME):
-        df = pd.DataFrame(columns=[
-            "Date", "Name", "Amount", "Interest Rate (%)", "Duration (Months)",
-            "Start Month", "End Month", "Total Interest", "Total Payable",
-            "Documents", "Installments Received", "Remaining Balance"
+# -------------------- Setup --------------------
+def initialize_files():
+    if not os.path.exists(LOANS_FILE):
+        df_loans1 = pd.DataFrame(columns=[
+            "Loan ID", "Date", "Name", "Amount", "Interest Rate (%)", "Duration (Months)",
+            "Start Date", "End Date", "Total Interest", "Total Payable", "Monthly Installment", "Documents"
         ])
-        df.to_excel(FILE_NAME, index=False)
+        df_loans1.to_excel(LOANS_FILE, index=False)
 
-def load_data():
-    return pd.read_excel(FILE_NAME)
+    if not os.path.exists(PAYMENTS_FILE):
+        df_payments = pd.DataFrame(columns=[
+            "Loan ID", "Payment Date", "Amount Paid"
+        ])
+        df_payments.to_excel(PAYMENTS_FILE, index=False)
 
-def save_data(df):
-    df.to_excel(FILE_NAME, index=False)
+def load_loans():
+    return pd.read_excel(LOANS_FILE)
+
+def load_payments():
+    return pd.read_excel(PAYMENTS_FILE)
+
+def save_loans(df):
+    df.to_excel(LOANS_FILE, index=False)
+
+def save_payments(df):
+    df.to_excel(PAYMENTS_FILE, index=False)
 
 def calculate_interest(principal, rate, months):
-    time_in_years = months / 12
+    time_in_years = months
     interest = (principal * rate * time_in_years) / 100
-    return round(interest, 2), round(principal + interest, 2)
+    total_payable = principal + interest
+    monthly_installment = total_payable / months
+    return round(interest, 2), round(total_payable, 2), round(monthly_installment, 2)
 
-# -------------------- App Setup --------------------
-initialize_file()
+initialize_files()
+
+# -------------------- Streamlit Setup --------------------
+st.set_page_config(page_title="Finance Lending App", layout="centered")
 st.sidebar.title("📊 Navigation")
-page = st.sidebar.radio("Go to", ["🏠 Home", "➕ Add Loan Record", "📚 View Records"])
-st.title("💼 Finance Lending Manager")
+page = st.sidebar.radio("Go to", ["🏠 Home", "➕ Add Loan", "📚 View Loans"])
 
 # -------------------- Home Page --------------------
 if page == "🏠 Home":
-    st.header("Loan Calculator (Not Saved)")
+    st.title("💼 Finance Lending Manager")
+    st.subheader("Loan Estimator")
     with st.form("calc_form"):
         principal = st.number_input("Loan Amount (₹)", min_value=0.0, step=100.0)
         rate = st.number_input("Interest Rate (%)", min_value=0.0, step=0.1)
-        months = st.number_input("Loan Duration (in Months)", min_value=1, step=1)
+        months = st.number_input("Loan Duration (Months)", min_value=1, step=1)
+        calc = st.form_submit_button("Estimate")
+        if calc:
+            interest, total, emi = calculate_interest(principal, rate, months)
+            st.success(f"Monthly Installment: ₹{emi}")
+            st.success(f"Interest: ₹{interest}")
+            st.success(f"Total Payable: ₹{total}")
+        
 
-        calculate = st.form_submit_button("Estimate Loan")
-        if calculate:
-            interest, total = calculate_interest(principal, rate, months)
-            st.success(f"Estimated Interest: ₹{interest}")
-            st.success(f"Total Payable Amount: ₹{total}")
-
-# -------------------- Add Loan Record Page --------------------
-elif page == "➕ Add Loan Record":
-    st.header("Add New Loan Record")
+# -------------------- Add Loan --------------------
+elif page == "➕ Add Loan":
+    st.title("Add New Loan Record")
     with st.form("add_loan_form"):
         name = st.text_input("Borrower's Name")
         principal = st.number_input("Loan Amount (₹)", min_value=0.0, step=100.0)
         rate = st.number_input("Interest Rate (%)", min_value=0.0, step=0.1)
         months = st.number_input("Duration (Months)", min_value=1, step=1)
-        start_month = st.date_input("Loan Start Date (Month)", min_value=datetime.today())
-        documents = st.text_area("Documents Submitted (e.g., Aadhaar, PAN)")
+        start_date = st.date_input("Start Date", min_value=datetime.today())
+        documents = st.text_area("Documents Submitted")
 
-        save = st.form_submit_button("Calculate & Save Loan")
+        interest, total, emi = calculate_interest(principal, rate, months)
 
-        if save:
-            interest, total = calculate_interest(principal, rate, months)
-            end_month = start_month + timedelta(days=30 * months)
+        st.markdown(f"**Monthly Installment:** ₹{emi}")
 
-            new_entry = {
+        submit = st.form_submit_button("Save Loan")
+
+        if submit:
+            end_date = start_date + timedelta(days=30 * months)
+
+            df_loans1 = load_loans()
+            loan_id = f"L{len(df_loans1)+1:04d}"
+
+            new_loan = {
+                "Loan ID": loan_id,
                 "Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "Name": name,
                 "Amount": principal,
                 "Interest Rate (%)": rate,
                 "Duration (Months)": months,
-                "Start Month": start_month.strftime("%Y-%m-%d"),
-                "End Month": end_month.strftime("%Y-%m-%d"),
+                "Start Date": start_date.strftime("%Y-%m-%d"),
+                "End Date": end_date.strftime("%Y-%m-%d"),
                 "Total Interest": interest,
                 "Total Payable": total,
-                "Documents": documents,
-                "Installments Received": 0.0,
-                "Remaining Balance": total
+                "Monthly Installment": emi,
+                "Documents": documents
             }
 
-            df = load_data()
-            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-            save_data(df)
+            df_loans1 = pd.concat([df_loans1, pd.DataFrame([new_loan])], ignore_index=True)
+            save_loans(df_loans1)
+            st.success(f"Loan saved! Loan ID: {loan_id}")
 
-            st.success("Loan record saved successfully.")
-            st.info(f"Interest: ₹{interest} | Total Payable: ₹{total}")
+# -------------------- View Loans --------------------
+elif page == "📚 View Loans":
+    st.title("Loan Records")
+    df_loans1 = load_loans()
+    df_payments = load_payments()
 
-# -------------------- View Records Page --------------------
-elif page == "📚 View Records":
-    st.header("All Loan Records")
-    df = load_data()
+    if df_loans1.empty:
+        st.warning("No loans available.")
+    else:
+        name_filter = st.text_input("Search by Borrower's Name")
+        filtered = df_loans1[df_loans1["Name"].str.contains(name_filter, case=False, na=False)]
 
-    st.dataframe(df, use_container_width=True)
+        if filtered.empty:
+            st.info("No matching records found.")
+        else:
+            selected_id = st.selectbox("Select Loan ID", filtered["Loan ID"].tolist())
+            selected_loan = filtered[filtered["Loan ID"] == selected_id].iloc[0]
 
-    st.subheader("Update Installments")
-    selected_name = st.selectbox("Select Borrower", df["Name"].unique())
+            st.markdown(f"### Loan for {selected_loan['Name']}")
+            st.write(f"**Loan ID:** {selected_loan['Loan ID']}")
+            st.write(f"**Amount:** ₹{selected_loan['Amount']}")
+            st.write(f"**Total Payable:** ₹{selected_loan['Total Payable']}")
+            st.write(f"**Monthly Installment:** ₹{selected_loan['Monthly Installment']}")
+            st.write(f"**Start:** {selected_loan['Start Date']} → **End:** {selected_loan['End Date']}")
+            st.write(f"**Documents:** {selected_loan['Documents']}")
 
-    borrower_df = df[df["Name"] == selected_name]
-    index = borrower_df.index[0]  # Assuming one loan per person for now
+            # Payments Summary
+            loan_payments = df_payments[df_payments["Loan ID"] == selected_id]
+            total_paid = loan_payments["Amount Paid"].sum()
+            remaining = selected_loan["Total Payable"] - total_paid
 
-    st.write(f"**Outstanding Balance:** ₹{df.loc[index, 'Remaining Balance']}")
-    installment = st.number_input("Installment Received (₹)", min_value=0.0, step=100.0)
+            st.subheader("💳 Payment Summary")
+            st.metric("Total Paid", f"₹{total_paid}")
+            st.metric("Remaining Balance", f"₹{remaining}")
 
-    if st.button("Record Installment"):
-        df.loc[index, "Installments Received"] += installment
-        df.loc[index, "Remaining Balance"] -= installment
-        df.loc[index, "Remaining Balance"] = max(0.0, df.loc[index, "Remaining Balance"])  # no negative balances
-        save_data(df)
-        st.success("Installment recorded.")
-        st.experimental_rerun()
+            st.subheader("➕ Add Payment")
+            with st.form("add_payment_form"):
+                amount_paid = st.number_input("Payment Amount (₹)", min_value=0.0, step=100.0)
+                pay_now = st.form_submit_button("Record Payment")
+                if pay_now:
+                    new_payment = {
+                        "Loan ID": selected_id,
+                        "Payment Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Amount Paid": amount_paid
+                    }
+                    df_payments = pd.concat([df_payments, pd.DataFrame([new_payment])], ignore_index=True)
+                    save_payments(df_payments)
+                    st.success("Payment recorded! Please refresh manually to see updated balance.")
 
-    with st.expander("📥 Download as Excel"):
-        st.download_button(
-            "Download Excel",
-            data=open(FILE_NAME, "rb").read(),
-            file_name="loan_records.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            with st.expander("📜 Payment History"):
+                st.dataframe(loan_payments, use_container_width=True)
